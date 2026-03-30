@@ -8,7 +8,7 @@ REM Master script to start both backend and frontend
 
 echo ╔═══════════════════════════════════════════════════════════╗
 echo ║                                                           ║
-echo ║       🌐 NETWORK MONITOR - WEB APPLICATION 🌐            ║
+echo ║            # NETWORK MONITOR - WEB APPLICATION #          ║
 echo ║                                                           ║
 echo ║              Starting Full Stack Application              ║
 echo ║                                                           ║

@@ -5,6 +5,7 @@ import com.networkmonitor.model.Device;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.ArrayList;
@@ -24,27 +25,11 @@ public class DeviceDiscovery {
      */
     public static String getLocalSubnet() {
         try {
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface networkInterface = interfaces.nextElement();
-                
-                // Skip loopback and inactive interfaces
-                if (networkInterface.isLoopback() || !networkInterface.isUp()) {
-                    continue;
-                }
-                
-                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
-                while (addresses.hasMoreElements()) {
-                    InetAddress addr = addresses.nextElement();
-                    
-                    // We want IPv4 addresses only
-                    if (addr.getAddress().length == 4) {
-                        String ip = addr.getHostAddress();
-                        // Get subnet by replacing last octet with 0
-                        String subnet = ip.substring(0, ip.lastIndexOf('.')) + ".0/24";
-                        return subnet;
-                    }
-                }
+            InetAddress primary = getPrimaryIPv4Address();
+            if (primary != null) {
+                String ip = primary.getHostAddress();
+                String subnet = ip.substring(0, ip.lastIndexOf('.')) + ".0/24";
+                return subnet;
             }
         } catch (Exception e) {
             System.err.println("Error getting local subnet: " + e.getMessage());
@@ -52,6 +37,75 @@ public class DeviceDiscovery {
         
         // Default fallback
         return "192.168.1.0/24";
+    }
+
+    /**
+     * Pick a sane primary IPv4 on an active, non-loopback interface. Avoids link-local 169.254.x.x.
+     */
+    public static InetAddress getPrimaryIPv4Address() {
+        try {
+            InetAddress wifiCandidate = null;
+            InetAddress siteLocalCandidate = null;
+            InetAddress fallback = null;
+
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+
+                if (networkInterface.isLoopback() || !networkInterface.isUp() || networkInterface.isVirtual()) {
+                    continue;
+                }
+
+                String name = networkInterface.getDisplayName().toLowerCase();
+                if (name.contains("vethernet") || name.contains("hyper-v") || name.contains("wsl") || name.contains("default switch")) {
+                    continue; // skip virtual/host-only adapters that often hijack the first IP
+                }
+
+                boolean looksWifi = name.contains("wi-fi") || name.contains("wifi") || name.contains("wireless");
+
+                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress addr = addresses.nextElement();
+
+                    if (!(addr instanceof Inet4Address)) {
+                        continue;
+                    }
+
+                    String ip = addr.getHostAddress();
+
+                    // Skip link-local 169.254.x.x
+                    if (addr.isLinkLocalAddress() || ip.startsWith("169.254")) {
+                        continue;
+                    }
+
+                    if (looksWifi && addr.isSiteLocalAddress()) {
+                        return addr; // highest priority: Wi-Fi site-local
+                    }
+
+                    if (addr.isSiteLocalAddress() && siteLocalCandidate == null) {
+                        siteLocalCandidate = addr; // generic private address
+                    }
+
+                    if (fallback == null && !addr.isLoopbackAddress()) {
+                        fallback = addr;
+                    }
+                }
+            }
+
+            if (siteLocalCandidate != null) {
+                return siteLocalCandidate;
+            }
+
+            if (fallback != null) {
+                return fallback;
+            }
+
+            // Last resort
+            return InetAddress.getLocalHost();
+        } catch (Exception e) {
+            System.err.println("Error getting primary IPv4: " + e.getMessage());
+            return null;
+        }
     }
     
     /**

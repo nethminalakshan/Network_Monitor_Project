@@ -71,7 +71,8 @@ public class NetworkMonitor {
             case 3:
                 // Monitor local machine only
                 try {
-                    String localIP = java.net.InetAddress.getLocalHost().getHostAddress();
+                    java.net.InetAddress localAddr = com.networkmonitor.discovery.DeviceDiscovery.getPrimaryIPv4Address();
+                    String localIP = localAddr != null ? localAddr.getHostAddress() : java.net.InetAddress.getLocalHost().getHostAddress();
                     devices = DeviceDiscovery.quickScan(new String[]{localIP, "8.8.8.8", "1.1.1.1"});
                 } catch (Exception e) {
                     System.err.println("Error detecting local IP: " + e.getMessage());
